@@ -349,7 +349,9 @@ impl State {
     }
 
     fn is_inhibiting_shortcuts(&self) -> bool {
-        self.niri
+        // Protocol-based inhibitor (app requested via Wayland protocol).
+        let protocol_inhibit = self
+            .niri
             .keyboard_focus
             .surface()
             .and_then(|surface| {
@@ -357,7 +359,21 @@ impl State {
                     .keyboard_shortcuts_inhibiting_surfaces
                     .get(surface)
             })
-            .is_some_and(KeyboardShortcutsInhibitor::is_active)
+            .is_some_and(KeyboardShortcutsInhibitor::is_active);
+
+        if protocol_inhibit {
+            return true;
+        }
+
+        // Rule-based inhibitor: check if focused layout window has inhibit-shortcuts rule
+        // and the user hasn't manually toggled it off.
+        if let Some(mapped) = self.niri.layout.focus() {
+            if mapped.rules().inhibit_shortcuts == Some(true) {
+                return !self.niri.rule_inhibit_disabled.contains(&mapped.id());
+            }
+        }
+
+        false
     }
 
     fn on_keyboard<I: InputBackend>(
@@ -785,6 +801,7 @@ impl State {
                 }
             }
             Action::ToggleKeyboardShortcutsInhibit => {
+                // First try protocol-based inhibitor.
                 if let Some(inhibitor) = self.niri.keyboard_focus.surface().and_then(|surface| {
                     self.niri
                         .keyboard_shortcuts_inhibiting_surfaces
@@ -794,6 +811,15 @@ impl State {
                         inhibitor.inactivate();
                     } else {
                         inhibitor.activate();
+                    }
+                }
+                // Then handle rule-based inhibitor.
+                else if let Some(mapped) = self.niri.layout.focus() {
+                    if mapped.rules().inhibit_shortcuts == Some(true) {
+                        let id = mapped.id();
+                        if !self.niri.rule_inhibit_disabled.remove(&id) {
+                            self.niri.rule_inhibit_disabled.insert(id);
+                        }
                     }
                 }
             }
