@@ -1932,6 +1932,15 @@ impl Tty {
                 niri.update_primary_scanout_output(output, &res.states);
                 if let Some(dmabuf_feedback) = surface.dmabuf_feedback.as_ref() {
                     niri.send_dmabuf_feedbacks(output, dmabuf_feedback, &res.states);
+                    // Flush after DMABUF feedback to avoid overflowing
+                    // libwayland's 4096-byte client buffer. DMABUF feedback
+                    // messages can be large (especially with GPUs supporting
+                    // many formats), and combined with subsequent frame
+                    // callbacks they can exceed the buffer before the next
+                    // flush_clients() call.
+                    if let Err(err) = niri.display_handle.flush_clients() {
+                        warn!("error flushing clients after dmabuf feedback: {err:?}");
+                    }
                 }
 
                 if !res.is_empty {

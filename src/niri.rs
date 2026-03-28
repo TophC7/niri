@@ -4636,6 +4636,13 @@ impl Niri {
         // However, this should probably be restricted to sending frame callbacks to more surfaces,
         // to err on the safe side.
         self.send_frame_callbacks(output);
+
+        // Flush after frame callbacks to prevent libwayland's 4096-byte
+        // client buffer from overflowing when many surfaces need updates.
+        if let Err(err) = self.display_handle.flush_clients() {
+            warn!("error flushing clients after frame callbacks: {err:?}");
+        }
+
         backend.with_primary_renderer(|renderer| {
             #[cfg(feature = "xdp-gnome-screencast")]
             {
